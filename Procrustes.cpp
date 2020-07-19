@@ -71,7 +71,8 @@ float Procrustes::procrustes( const Mat& X, const Mat& Y ){
     float norm_Y    = sqrt( ss_Y );
     Y0              /= norm_Y;
     
-    
+    //cout << X0 << endl;
+    //cout << Y0 << endl;
     /* Pad with zeros is Y has less points than X */
     if( Y.rows < X.rows )
         vconcat( Y0, Mat::zeros( X.rows - Y.rows, 1, Y.type()), Y0 );
@@ -85,7 +86,12 @@ float Procrustes::procrustes( const Mat& X, const Mat& Y ){
     /* Since in USV, U and V represents the rotation, and S is the scaling... */
     Mat V           = Vt.t();
     this->rotation  = V * U.t();
-    
+    //cout << "=============================" << endl;
+   // cout << U << endl;
+   // cout << s << endl;
+   // cout << Vt << endl;
+   // cout << A << endl;
+   // cout << "=============================" << endl;
     if( !bestReflection ) {
         bool have_reflection = determinant( this->rotation ) < 0;
         if( bestReflection != have_reflection ) {
@@ -114,10 +120,9 @@ float Procrustes::procrustes( const Mat& X, const Mat& Y ){
     
     if( Y.rows < X.rows )
         rotation = rotation.rowRange(0, Y.rows );
-    Mat centroid_A = (Mat_<float>(3,1) << mu_x[0], mu_x[1], mu_x[2]);
-    Mat centroid_B = (Mat_<float>(3,1) << mu_y[0], mu_y[1], mu_y[2]);
-
-    translation = -rotation * centroid_A + centroid_B ;
+    Mat centroid_A = (Mat_<float>(1,3) << mu_x[0], mu_x[1], mu_x[2]);
+    Mat centroid_B = (Mat_<float>(1,3) << mu_y[0], mu_y[1], mu_y[2]);
+    translation =  centroid_A - scale*centroid_B*rotation  ;
     return error;
 }
 

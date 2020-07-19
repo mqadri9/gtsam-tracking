@@ -62,6 +62,21 @@ void save_vtk(Mat pointcloud, string path) {
 }
 
 
+PointMatcher<float>::DataPoints create_datapoints(Mat pointcloud) {
+    ostringstream os; 
+    os << "x,y,z\n";
+    for(int i = 0; i < pointcloud.rows; i++)
+    {
+       os << pointcloud.at<float>(i, 0) << "," << pointcloud.at<float>(i, 1) << "," << pointcloud.at<float>(i, 2) << "\n";
+    } 
+    string s = os.str();
+    std::istringstream in_stream(s);
+    auto points = PointMatcherIO<float>::loadCSV(in_stream);
+    const PointMatcher<float>::DataPoints PC(points);
+    return PC;
+}
+
+
 int main(int argc, char* argv[]) {
 
     float focal_length = 2869.381763767118;
@@ -78,9 +93,9 @@ int main(int argc, char* argv[]) {
     typedef PointMatcher<float> PM;
     typedef PM::DataPoints DP;
     
-       
-    frames.push_back("15");
-    frames.push_back("16");
+    for(int k=15; k <36; k++) {
+        frames.push_back(to_string(k));
+    }
     
     // Create SIFT detector and define parameters
     std::vector<KeyPoint> keypoints1, keypoints2;
@@ -209,16 +224,27 @@ int main(int argc, char* argv[]) {
         cout << proc.error << endl;
         cout << proc.rotation << endl;
         cout << proc.translation << endl;
-        cout << determinant( proc.rotation )<< endl;
-        cout << proc.translation.size() << endl;
-        Mat m1_transformed;
-        cv::transform( m1, m1_transformed, proc.rotation );
+        Mat m2_transformed;
+        cv::transform( m2, m2_transformed, proc.rotation );
         Scalar translation( proc.translation.at<float>(0), proc.translation.at<float>(1), proc.translation.at<float>(2));
-        m1_transformed += translation;
-        save_vtk(m1_transformed, "m1_transformed.vtk");
+        m2_transformed += translation;
+        save_vtk(m2_transformed, "m2_transformed.vtk");
         save_vtk(m2, "m2.vtk");
         save_vtk(m1, "m1.vtk");
         save_vtk(proc.Yprime, "Yprime.vtk");
+        
+        
+        const DP ref = create_datapoints(m1);
+        const DP data = create_datapoints(m2);
+        icp.setDefault();
+        //cout << dm1 - dm2 << endl;  
+        PM::TransformationParameters T = icp(ref, data);
+        DP data_out(data);
+        icp.transformations.apply(data_out, T);
+        ref.save("test_ref.vtk");
+        data.save("test_data_in.vtk");
+        data_out.save("test_data_out.vtk");
+        cout << "Final transformation:" << endl << T << endl;
     }
     
     
