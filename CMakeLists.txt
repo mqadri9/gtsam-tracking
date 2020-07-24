@@ -43,10 +43,11 @@ set(EXTERNAL_LIBS ${EXTERNAL_LIBS} ${OpenCV_LIBS})
 
 message("${EXTERNAL_LIBS}")
 
-add_executable(icp icp_simple.cpp Procrustes.cpp ./Procrustes.h)
-add_executable(procrustes main.cpp Procrustes.cpp ./Procrustes.h)
+add_executable(main main.cpp Procrustes.cpp utils.cpp pointcloud.cpp optimizer.cpp test_sfm.cpp pose.cpp
+               ./Procrustes.h ./utils.h ./pointcloud.h ./optimizer.h ./test_sfm.h ./pose.h)
+add_executable(procrustes test_procrustes.cpp Procrustes.cpp ./Procrustes.h)
 
-target_link_libraries(icp ${EXTERNAL_LIBS})
+target_link_libraries(main ${EXTERNAL_LIBS})
 target_link_libraries(procrustes ${EXTERNAL_LIBS})
 
 

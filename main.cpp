@@ -1,207 +1,143 @@
-//
-//  main.cpp
-//  Procrustes
-//
-//  Created by Saburo Okita on 06/04/14.
-//  Copyright (c) 2014 Saburo Okita. All rights reserved.
-//
+#include "utils.h" 
+#include "pointcloud.h" 
+#include "optimizer.h"
+#include "test_sfm.h"
+#include "pose.h"
 
-#include <iostream>
-#include <opencv2/opencv.hpp>
-#include "Procrustes.h"
+int main(int argc, char* argv[]) {
+    
+    vector<int> considered_poses; 
 
-using namespace std;
-using namespace cv;
-
-vector<Mat> generateTestData( int size ) {
-//    srand(static_cast<unsigned int>(time(NULL)));
-    
-    vector<Mat> result;
-    
-    /* First create random points X, centered at (250, 250) with stddev of 80 */
-    Mat X(40, 1, CV_32FC2 );
-    RNG rng;
-    rng.fill( X, RNG::NORMAL, Scalar( 250, 250 ), Scalar( 80, 80 ) );
-    result.push_back( X );
-    
-    for( int i = 1; i < size; i++ ) {
-        float scale = ((rand() % 100) + 25) / 100.0;
-        Scalar translation( (rand() % 600) + 100, (rand() % 300), (rand() % 300)  );
+    // Keypoint Mapper is a map that takes the landmark i 
+    // and returns a map which maps each image j to the coordinate
+    // where landmark i appeared in image j
+    map<int, map<int, Point2f>> KeypointMapper;
+    map<string,int> prevKeypointIndexer;
+    map<string,int> currKeypointIndexer;
+    std::map<int,vector<Point2f>>::iterator it;
+    std::map<string,int>::iterator itr;
+               
+    vector<string> frames;
+    vector<Pose3> poses;
+    vector<Mat> disparities;
+    retPointcloud s;
         
-        /* Transform Y so that it's rotated and translated version of X */
-        float angle = (rand() % 90) * 180.0 / M_PI;
-        Mat S = (Mat_<float>(2,2) << cosf(angle), -sinf(angle), sinf(angle), cosf( angle) );
-        Mat Y;
-        cv::transform( scale * X, Y, S );
-        Y += translation;
-        
-        /* Jitter the Y points a bit, so that it's not exactly transformed version of X */
-        Mat jitter( Y.size(), Y.type() );
-        rng.fill( jitter, RNG::NORMAL, Scalar(0, 0), Scalar( 5, 5 ));
-        Y += jitter;
-        
-        result.push_back( Y );
+    for(int k=15; k <35; k++) {
+        frames.push_back(to_string(k));
     }
     
-    return result;
-}
-
-vector<Mat> generateTestData3D( int size ) {
-//    srand(static_cast<unsigned int>(time(NULL)));
+    // Create SIFT detector and define parameters
+    std::vector<KeyPoint> keypoints1, keypoints2;
+    int minHessian = 400;
+    Ptr<SURF> detector = SURF::create( minHessian );
+    Mat descriptors1, descriptors2; 
+    Ptr<DescriptorMatcher> matcher = DescriptorMatcher::create(DescriptorMatcher::FLANNBASED);
     
-    vector<Mat> result;
-    
-    /* First create random points X, centered at (250, 250, 250) with stddev of 80 */
-    Mat X(5, 1, CV_32FC3 );
-    RNG rng;
-    rng.fill( X, RNG::NORMAL, Scalar( 250, 250, 250 ), Scalar( 80, 80, 80 ) );
-    result.push_back( X );
-    
-    for( int i = 1; i < size; i++ ) {
-        float scale = ((rand() % 100) + 25) / 100.0;
-        Scalar translation( (rand() % 600) + 100, (rand() % 300), (rand() % 300)  );
-        scale = 1;
-        //Scalar translation(0, 0, 0);
-        /* Transform Y so that it's rotated and translated version of X */
-        float angle = (rand() % 90) * 180.0 / M_PI;
-        Mat S = (Mat_<float>(3,3) << cosf(angle), -sinf(angle), 0,
-                                     sinf(angle), cosf( angle), 0,
-                                    0, 0, 1 );
-        Mat Y;
-
-        cv::transform( scale * X, Y, S );
-        Y += translation;
+    const float ratio_thresh = 0.7f;
         
-        /* Jitter the Y points a bit, so that it's not exactly transformed version of X */
-        Mat jitter( Y.size(), Y.type() );
-        rng.fill( jitter, RNG::NORMAL, Scalar(0, 0, 0), Scalar( 5, 5, 5 ));
-        Y += jitter;
+    for(size_t i=0; i<frames.size(); ++i) {
+        std::vector< std::vector<DMatch> > knn_matches;
         
-        result.push_back( Y );
+        
+        // Read image at index i 
+        string img_path = image_folder + "/frame" + frames[i] + ".jpg";
+        cout << img_path <<"\n";
+        Mat img = imread( samples::findFile( img_path ), IMREAD_GRAYSCALE );
+        if (img.empty()) {
+            cout << "Could not open or find the image!\n" << endl;
+            return -1;
+        }        
+        
+        // If it is the first image in the sequence, detect the keypoints and continue 
+        // to next image
+        if (i==0) {
+            detector->detectAndCompute( img, noArray(), keypoints2, descriptors2 );
+            Rot3 R(1, 0, 0, 0, 1, 0, 0, 0, 1);
+            Point3 t;
+            t(0) = 0;
+            t(1) = 0;
+            t(2) = 0;
+            Pose3 pose(R, t);
+            poses.push_back(pose);
+            continue;
+        }
+        
+        keypoints1 = keypoints2; 
+        descriptors1 = descriptors2;         
+        detector->detectAndCompute( img, noArray(), keypoints2, descriptors2 );
+
+        matcher->knnMatch( descriptors1, descriptors2, knn_matches, 2 );        
+        
+        img_path = data_folder + "/frame" + frames[i-1] + ".jpg";
+        Mat disparity1 = imread( samples::findFile( img_path ), 0);
+
+        img_path = data_folder + "/frame" + frames[i] + ".jpg";
+        Mat disparity2 = imread( samples::findFile( img_path ), 0);
+         
+        retPointcloud s = createPointClouds(disparity1, disparity2, keypoints1, keypoints2, knn_matches);
+        Mat m1 = s.ret[0];
+        Mat m2 = s.ret[1];
+        vector<Point2f> src = s.src;
+        vector<Point2f> dst = s.dst;;
+        
+        if(m1.size().height < THRESHOLD_NUMBER_MATCHES) {
+            if(considered_poses.empty()) continue;
+            else break;
+        }
+        if(i==1){
+            considered_poses.push_back(i-1);
+        }
+        considered_poses.push_back(i);
+        
+        retPose p = getPose(m1, m2, "procrustes");        
+        Pose3 pose(p.R, p.t);
+        poses.push_back(poses[i-1]*pose);        
+
+        // Need to construct the landmarks array
+        // Initialize and create gtsam graph here
+        // i is the image index
+        
+        if(i == 1) {
+            for(int l =0; l < dst.size(); l++) {
+                // assign incremental landmark IDs for the first two images
+                KeypointMapper[l].insert(make_pair(i-1, src[l]));
+                KeypointMapper[l].insert(make_pair(i, dst[l]));
+                prevKeypointIndexer[getKpKey(dst[l])] = l;
+            }
+            continue;
+        }
+        /* For each keypoint in the new image
+           Check if the match at image i-1 already exists (data associated)
+           If it does, get the of the corresponding landmark_id and populate KeypointMapper[landmark_id]
+           If it does not, assign a new landmark_id and populate KeypointMapper[landmark_id]
+        */
+        for(int l =0; l < dst.size(); l++) {
+            itr = prevKeypointIndexer.find(getKpKey(src[l]));
+            int landmark_id;
+            if ( itr != prevKeypointIndexer.end() ) {
+                landmark_id = itr->second;
+            }
+            else{
+                int largest_landmark_id = KeypointMapper.rbegin()->first;
+                landmark_id = largest_landmark_id + 1;
+            }
+            KeypointMapper[landmark_id].insert(make_pair(i, dst[l]));
+            currKeypointIndexer[getKpKey(dst[l])] = landmark_id;
+        }
+                
+        prevKeypointIndexer.clear();
+        prevKeypointIndexer = currKeypointIndexer;
     }
-    
-    return result;
-}
 
-/**
- * A simple helper class to plot the points
- **/
-void plot(Mat& img, Mat& points, Scalar color ) {
-    vector<Point2f> vec;
-    points.copyTo( vec );
+    // Run GTSAM bundle adjustment
+    gtsam::Values result;
+    Cal3_S2::shared_ptr Kgt(new Cal3_S2(focal_length, focal_length, 0 /* skew */, cx, cy));
+    result = Optimize(KeypointMapper, Kgt, frames, considered_poses, poses);
     
-    for( Point2f p: vec )
-        circle( img, p, 2, color, 2 );
-}
 
-void procrustesAnalysisTest() {
-    namedWindow("");
-    moveWindow( "", 0, 0 );
-    cout << "Testing Procrustes Analysis\n"; 
-    vector<Mat> points = generateTestData( 2 );
-    
-    Mat img(600, 900, CV_8UC3, Scalar(255, 255, 255) );
-    
-    /* Plot X */
-    plot( img, points[0], Scalar(0, 200, 0));
-    
-    /* Plot Y */
-    plot( img, points[1], Scalar(200, 0, 0));
-    
-    imshow( "", img );
-    waitKey();
-    
-    /*  Perform procrustes analysis, to obtain approximate transformed points from Y to X */
-    Procrustes proc;
-    proc.procrustes( points[0], points[1] );
-    cout << points[0] << "\n";
-    vector<Point2f> Y_prime = proc.yPrimeAsVector();
-    for( Point2f point : Y_prime )
-        circle( img, point, 3, Scalar(0, 0, 255), 2);
-    
-    imshow( "", img );
-    waitKey();
-    
-    /* Output the squared error, and scale, rotation and translation values involved in acquiring Y prime */
-    cout << proc.error << endl;
-    cout << proc.scale << endl;
-    cout << proc.rotation << endl;
-    cout << proc.translation << endl;
-}
+    // Test GTSAM output  
+    test_sfm(result, Kgt);
 
-void procrustes3DTest() {
-    Mat mat1(20, 3, CV_64FC1);
-    Mat mat2(20, 3, CV_64FC1);
-    double low = -500.0;
-    double high = +500.0;
-    randu(mat1, Scalar(low), Scalar(high));
-    mat2 = mat1;
-    Procrustes proc;
-    vector<Mat> points = generateTestData3D(2);
-    proc.procrustes( points[0], points[1] );
-    
-    cout << proc.error << endl;
-    cout << proc.scale << endl;
-    cout << proc.rotation << endl;
-    cout << proc.translation << endl;
-}
-
-
-void generalizedProcrustesTest() {
-    namedWindow("");
-    moveWindow( "", 0, 0 );
-    
-    /* First we generate 6 set of points */
-    vector<Mat> points = generateTestData( 6 );
-    
-    /* Colors to differentiate each set of points */
-    const vector<Scalar> colors = {
-        Scalar( 255, 0, 0 ),
-        Scalar( 0, 255, 0 ),
-        Scalar( 0, 0, 255 ),
-        Scalar( 255, 255, 0 ),
-        Scalar( 0, 255, 255 ),
-        Scalar( 255, 0, 255 ),
-    };
-    
-    /* Plot the points out */
-    Mat img(600, 900, CV_8UC3, Scalar(255, 255, 255) );
-    for( int i = 0; i < 6; i++ )
-        plot( img, points[i], colors[i] );
-    
-    imshow( "", img );
-    waitKey();
-    
-    /* Get a sub region of the original image, to plot our mean / canonical shape */
-    Mat temp = Mat( img, Rect(580, 20, 300, 300) );
-    temp     = Scalar( 220, 220, 220 );
-    
-    /* Apply general procrustes analysis to get the mean shape */
-    Mat mean_mat;
-    Procrustes proc;
-    
-    points = proc.generalizedProcrustes( points, mean_mat );
-    
-    /* The mean shape is normalized, thus in order to view it, we scale it and translate it a bit */
-    vector<Point2f> mean_shape;
-    mean_mat *= 600;
-    mean_mat += Scalar( 150, 150 );
-    mean_mat.reshape(2).copyTo( mean_shape );
-    
-    /* Plot out our image */
-    for( Point2f point : mean_shape )
-        circle( temp, point, 3, Scalar(0, 0, 255), 2);
-    
-    imshow( "", img );
-    waitKey();
-    cout << proc.error << endl;
-    cout << proc.scale << endl;
-    cout << proc.rotation << endl;
-    cout << proc.translation << endl;    
-}
-
-int main(int argc, const char * argv[]) {
-    procrustes3DTest();
-    
     return 0;
 }
+
