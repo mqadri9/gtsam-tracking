@@ -16,7 +16,7 @@ gtsam::Values Optimize(map<int, map<int, Point2f>> KeypointMapper,
             .finished());  // 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
     graph.addPrior(Symbol('x', 0), poses[0], poseNoise);  // add directly to graph        
 
-    int N = frames.size();
+    int N = poses.size();
     map<int, map<int, Point2f> > FilteredKeypointMapper;
     map<int, map<int, Point3f> > landmarks;
     map<int, map<int, Point2f> >::iterator it;
@@ -30,17 +30,22 @@ gtsam::Values Optimize(map<int, map<int, Point2f>> KeypointMapper,
         }
         FilteredKeypointMapper.insert(make_pair(j++, it->second));
     }
-    
+    if (FilteredKeypointMapper.size() == 0) {
+        throw std::invalid_argument( "Size of FilteredKeypointMapper is 0");
+    }
+    //cout << "Created FilteredKeypointMapper" << endl;
+    //printKeypointMapper(FilteredKeypointMapper);
     vector<int> good_poses;
     for (size_t i = 0; i < poses.size(); ++i) {
-        iti = find (considered_poses.begin(), considered_poses.end(), i);
-        if (iti == considered_poses.end()) continue;        
+        //iti = find (considered_poses.begin(), considered_poses.end(), i);
+        //if (iti == considered_poses.end()) continue;        
         PinholeCamera<Cal3_S2> camera(poses[i], *Kgt);
         map<int, map<int, Point2f> >::iterator it;
         int j=0;
         for ( it=FilteredKeypointMapper.begin() ; it != FilteredKeypointMapper.end(); it++ ) {
+            //int frame_id = considered_poses[i];
             itt = (it->second).find(i);
-            if (itt == (it->second).end()) continue;
+            //if (itt == (it->second).end()) continue;
             Point2f measurement_cv2 = itt->second;
             Point2 measurement;
             measurement(0) = measurement_cv2.x;
@@ -48,22 +53,25 @@ gtsam::Values Optimize(map<int, map<int, Point2f>> KeypointMapper,
             graph.emplace_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2> >(
               measurement, noise, Symbol('x', i), Symbol('l', j), Kgt);
             j++;
-            good_poses.push_back(i);
         }
+        good_poses.push_back(i);
     }
     
-    //for(int i=0; i<considered_poses.size(); ++i)
-    //  std::cout << considered_poses[i] << ' ';
+    //cout << "populated good_poses" << endl;
+    //for(int i=0; i<good_poses.size(); ++i)
+    //  std::cout << good_poses[i] << ' ';
   
     //if(N != frames.size())
     //    throw invalid_argument( "This only works if N=frames.size(). Update code" );
-            
+    
+    //graph.print("graph: ");
     // map keys are ordered
-    vector<Point3> landmarks3d; 
-    for ( it=FilteredKeypointMapper.begin() ; it != FilteredKeypointMapper.end(); it++ ) {
+    vector<Point3> landmarks3d;
+    //printKeypointMapper(FilteredKeypointMapper);
+    for ( it=FilteredKeypointMapper.begin(); it != FilteredKeypointMapper.end(); it++ ) {
         Point2f landmark = (it->second).begin()->second; 
         int img_index =  (it->second).begin()->first;
-        string img_path = data_folder + "/frame" + frames[img_index] + ".jpg";
+        string img_path = data_folder + "/frame" + to_string(considered_poses[img_index]) + ".jpg";
         Mat disparity = imread( samples::findFile( img_path ), 0);
         float x = landmark.x;
         float y = landmark.y;
@@ -87,9 +95,7 @@ gtsam::Values Optimize(map<int, map<int, Point2f>> KeypointMapper,
     graph.addPrior(Symbol('l', 0), landmarks3d[0],
                   pointNoise);  // add directly to graph
     
-    
-    //graph.print("Factor Graph:\n");
-     
+         
     // Create the data structure to hold the initial estimate to the solution
     Values initialEstimate;
     for (size_t i = 0; i < poses.size(); ++i) {
@@ -100,7 +106,8 @@ gtsam::Values Optimize(map<int, map<int, Point2f>> KeypointMapper,
     for (size_t j = 0; j < landmarks3d.size(); ++j) {
         initialEstimate.insert<Point3>(Symbol('l', j), landmarks3d[j]);
     }
-    //graph.print("Factor Graph:\n");
+    graph.print("Factor Graph:\n");
+    initialEstimate.print("initial");
     //cout << "===================== POSES =========================" << endl;
     //for (size_t i = 0; i < poses.size(); ++i) {
     //        cout << poses[i] << endl;
@@ -121,4 +128,3 @@ gtsam::Values Optimize(map<int, map<int, Point2f>> KeypointMapper,
     //cout << landmarks3d.size() << endl;
     return result;
 }    
-    

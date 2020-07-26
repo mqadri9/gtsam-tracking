@@ -9,7 +9,16 @@ struct retPointcloud {
     vector<Point2f> dst;
 };
 
-retPointcloud createPointClouds(Mat, Mat, std::vector<KeyPoint>,  std::vector<KeyPoint>, std::vector< std::vector<DMatch> >);
+struct retFiltering {
+    vector<int> considered_poses;
+    vector<retPointcloud> filteredOutput;
+};
 
+
+
+
+retPointcloud createPointClouds(Mat, Mat, std::vector<KeyPoint>,  std::vector<KeyPoint>, std::vector< std::vector<DMatch> >);
+retFiltering filterImages(vector<string>);
+float avgDepth(Mat);
 
 #endif

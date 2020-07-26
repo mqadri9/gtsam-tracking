@@ -66,8 +66,8 @@ static float focal_length = 2869.381763767118*RESIZE_FACTOR;
 static float baseline = 0.089;
 static float cx = 2120.291162136175*RESIZE_FACTOR;
 static float cy = 1401.17755609316*RESIZE_FACTOR;
-static string image_folder = "/mnt/c/Users/moham/OneDrive/Desktop/others/133/rect1";
-static string data_folder = "/mnt/c/Users/moham/OneDrive/Desktop/others/133/disparities" ;
+static string image_folder = "/mnt/c/Users/moham/OneDrive/Desktop/others/151_6_6/rect1";
+static string data_folder = "/mnt/c/Users/moham/OneDrive/Desktop/others/151_6_6/disparities" ;
 
 // FUNCTION HEADERS
 

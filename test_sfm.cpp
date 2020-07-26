@@ -1,14 +1,41 @@
 #include "test_sfm.h"
 
 
-void test_sfm(gtsam::Values result, Cal3_S2::shared_ptr Kgt)
+int NumDigits(int x)  
+{  
+    x = abs(x);  
+    return (x < 10 ? 1 :   
+        (x < 100 ? 2 :   
+        (x < 1000 ? 3 :   
+        (x < 10000 ? 4 :   
+        (x < 100000 ? 5 :   
+        (x < 1000000 ? 6 :   
+        (x < 10000000 ? 7 :  
+        (x < 100000000 ? 8 :  
+        (x < 1000000000 ? 9 :  
+        10)))))))));  
+}  
+
+void test_sfm(gtsam::Values result, Cal3_S2::shared_ptr Kgt, vector<int> considered_poses)
 {
-    string img_path = image_folder + "/frame15" + ".jpg";
+    int pose_id = 2;
+    int target_frame_id = considered_poses[pose_id];
+    int initial_frame_id = considered_poses[0];
+    string img_path = image_folder + "/frame" + to_string(initial_frame_id) + ".jpg";
+    cout << "==================== TESTING =================" << endl;
+    cout << "image 0 :" << img_path << endl;
     Mat img = imread( samples::findFile( img_path ));
     
-    string filename =  "/mnt/c/Users/moham/OneDrive/Desktop/others/133/bbox/frame000015_FRUITLET.csv";
+    string idx; 
+    if (NumDigits(initial_frame_id) == 1) idx = "00" + to_string(initial_frame_id);
+    if (NumDigits(initial_frame_id) == 2) idx = "0" + to_string(initial_frame_id);
+    if (NumDigits(initial_frame_id) == 3) idx = to_string(initial_frame_id);
+    
+    string filename =  "/mnt/c/Users/moham/OneDrive/Desktop/others/151_6_6/bbox/frame000" + idx + "_FRUITLET.csv";
+    cout << "CSV FILE " << filename << endl;
     vector<vector<float>> csv = read_csv(filename);
-    img_path = data_folder + "/frame15" + ".jpg";
+    img_path = data_folder + "/frame"+  to_string(initial_frame_id) + ".jpg";
+    cout << "disparity FILE " << img_path << endl;
     Mat disparity = imread( samples::findFile( img_path ), 0);
     
     for(int j = 0; j < csv.size(); j++) {
@@ -40,10 +67,9 @@ void test_sfm(gtsam::Values result, Cal3_S2::shared_ptr Kgt)
     landmark3d(0) = x;
     landmark3d(1) = y;
     landmark3d(2) = z;
-    int num = 15;      
     Pose3 P0 = result.at(Symbol('x', 0).key()).cast<Pose3>();
-    Pose3 P = result.at(Symbol('x', num).key()).cast<Pose3>();
-    cout << P0 << endl;
+    Pose3 P = result.at(Symbol('x', pose_id).key()).cast<Pose3>();
+    //cout << P0 << endl;
     //landmark3d = P0.rotation()*(landmark3d - P0.translation());
     cout << landmark3d << endl;
     PinholeCamera<Cal3_S2> camera(P, *Kgt);
@@ -54,7 +80,7 @@ void test_sfm(gtsam::Values result, Cal3_S2::shared_ptr Kgt)
          
     cout << measurement << endl;
     ShowBlackCircle(img, pt3, 5);
-    img_path = image_folder + "/frame30" + ".jpg";
+    img_path = image_folder + "/frame" + to_string(target_frame_id) + ".jpg";
     img = imread( samples::findFile( img_path ));        
     
     ShowBlackCircle(img, mmm, 5);

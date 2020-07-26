@@ -3,7 +3,7 @@
 
 #include "utils.h"
 
-void test_sfm(gtsam::Values, Cal3_S2::shared_ptr);
-
+void test_sfm(gtsam::Values, Cal3_S2::shared_ptr, vector<int>);
+int NumDigits(int);  
 
 #endif

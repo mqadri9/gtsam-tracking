@@ -1,0 +1,109 @@
+        cout << "Recover 3D motion using fundamental matrix" << endl;
+        vector<uchar> mask;
+ 
+        vector<Point2f> src, dst;
+        vector<Point2f> src1, dst1;
+        for (auto &m : knn_matches) {
+            if(m[0].distance < 0.7*m[1].distance) {
+                src.push_back(keypoints1[m[0].queryIdx].pt);
+                dst.push_back(keypoints2[m[0].trainIdx].pt);
+            }
+        }
+ 
+        findFundamentalMat(src, dst, FM_RANSAC, 3.0, 0.99, mask);
+
+        for (size_t k=0; k < mask.size(); k++) {
+            if (mask[k]) {
+                src1.push_back(src[k]);
+                dst1.push_back(dst[k]);
+            }
+        }
+
+        // NOTE: pose from dst to src
+        Point2d pp(cx, cy);
+        Mat mask2;
+        Mat E = findEssentialMat(dst1, src1, focal_length, pp, RANSAC, 0.999, 1.0, mask2);
+        Mat local_R, local_t;
+        Mat m3_transformed;
+        recoverPose(E, dst1, src1, local_R, local_t, focal_length, pp, mask2);
+        cout << local_R << endl;
+        cout << local_t << endl;
+        m2.convertTo(m2, CV_64F);
+        m3_transformed = matrix_transform<double>(m2, local_R, local_t); 
+        
+        
+        
+
+        ==============================================================================
+        
+                //cout << m2_transformed << endl;
+        const DP ref = create_datapoints(m1);
+        const DP data = create_datapoints(m2);
+        icp.setDefault();
+        //cout << dm1 - dm2 << endl;  
+        PM::TransformationParameters T = icp(ref, data);
+        DP data_out(data);
+        
+        cout << T << endl;
+        
+        icp.transformations.apply(data_out, T);
+        data_out.save("test_data_out.vtk");
+        
+        
+        
+        
+        
+        // Loop over the different poses, adding the observations to iSAM incrementally
+        for (size_t i = 0; i < poses.size(); ++i) {
+          // Add factors for each landmark observation
+            PinholeCamera<Cal3_S2> camera(poses[i], *K);
+            map<int, map<int, Point2f> >::iterator it;
+            for ( it=KeypointMapper.begin() ; it != KeypointMapper.end(); it++ ) {
+                if((it->second).size() < frames.size()) {
+                    continue;
+                }
+                //Point2f pt = (it->second).find(i);
+                //Point2 measurement = pt;
+                graph.emplace_shared<GenericProjectionFactor<Pose3, Point3, Cal3_S2> >(measurement, noise,
+                        Symbol('x', i), Symbol('l', j), K);
+            }
+        
+          // Add an initial guess for the current pose
+          initialEstimate.insert(Symbol('x', i), poses[i]);
+        
+          // If this is the first iteration, add a prior on the first pose to set the coordinate frame
+          // and a prior on the first landmark to set the scale
+          // Also, as iSAM solves incrementally, we must wait until each is observed at least twice before
+          // adding it to iSAM.
+          if (i == 0) {
+            // Add a prior on pose x0, with 30cm std on x,y,z 0.1 rad on roll,pitch,yaw
+            auto poseNoise = noiseModel::Diagonal::Sigmas(
+                (Vector(6) << Vector3::Constant(0.1), Vector3::Constant(0.3)).finished());
+            graph.addPrior(Symbol('x', 0), poses[0], poseNoise);
+        
+            // Add a prior on landmark l0
+            auto pointNoise =
+                noiseModel::Isotropic::Sigma(3, 0.1);
+            graph.addPrior(Symbol('l', 0), points[0], pointNoise);
+        
+            // Add initial guesses to all observed landmarks
+            Point3 noise(-0.25, 0.20, 0.15);
+            for (size_t j = 0; j < points.size(); ++j) {
+              // Intentionally initialize the variables off from the ground truth
+              Point3 initial_lj = points[j] + noise;
+              initialEstimate.insert(Symbol('l', j), initial_lj);
+            }
+        
+          } else {
+            // Update iSAM with the new factors
+            isam.update(graph, initialEstimate);
+            Values currentEstimate = isam.estimate();
+            cout << "****************************************************" << endl;
+            cout << "Frame " << i << ": " << endl;
+            currentEstimate.print("Current estimate: ");
+        
+            // Clear the factor graph and values for the next iteration
+            graph.resize(0);
+            initialEstimate.clear();
+          }
+        }
